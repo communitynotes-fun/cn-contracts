@@ -6,38 +6,20 @@ library Embedding {
     function encode(
         int256[] memory wadEmbedding
     ) internal pure returns (bytes memory) {
-        uint256 dim = wadEmbedding.length;
-        bytes memory encoded = new bytes(dim * 2);
-        int256 scaleFactor = 3e13;
-        uint256 k = 0;
-        for (uint256 i = 0; i < dim; i++) {
-            int256 wadValue = wadEmbedding[i];
-            int16 int16Value = int16(int256(wadValue / scaleFactor));
-            if (wadValue / scaleFactor > 32767) int16Value = 32767;
-            if (wadValue / scaleFactor < -32768) int16Value = -32768;
-
-            encoded[k++] = bytes1(uint8(uint16(int16Value) >> 8));
-            encoded[k++] = bytes1(uint8(uint16(int16Value)));
+        bytes memory data = new bytes(0);
+        for (uint256 i = 0; i < wadEmbedding.length; i++) {
+            data = bytes.concat(
+                data,
+                abi.encodePacked(int16(wadEmbedding[i] / 1e14))
+            );
         }
-        return encoded;
+        return data;
     }
 
-    // Decode embedding from compact bytes format
-    function decode(
-        bytes memory data
-    ) internal pure returns (int256[] memory embedding) {
-        require(data.length % 2 == 0, "Invalid encoding length");
-        uint256 dim = data.length / 2;
-        embedding = new int256[](dim);
-        int256 scaleFactor = 3e13;
-
-        for (uint256 i = 0; i < dim; i++) {
-            uint256 offset = i * 2;
-            bytes2 b2 = (bytes2(data[offset]) << 8) | bytes2(data[offset + 1]);
-            int16 int16Value = int16(uint16(b2));
-            embedding[i] = int16Value * scaleFactor;
-        }
-        return embedding;
+    // Decode embedding from standard ABI encoded bytes
+    function decode(bytes memory data) internal pure returns (int256[] memory) {
+        // Use standard abi.decode for int256[]
+        return abi.decode(data, (int256[]));
     }
 
     // Bytes slicing utility

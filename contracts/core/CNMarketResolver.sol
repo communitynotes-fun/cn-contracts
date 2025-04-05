@@ -29,6 +29,11 @@ contract CNMarketResolver {
         int256 wadWeightedScore
     );
     event MarketTracked(uint256 indexed marketId, int256 wadTotalWeightedScore);
+    event LogResolverEmbedding(
+        uint256 indexed marketId,
+        string context,
+        int256[] embedding
+    );
 
     error NotMarket();
     error MarketAlreadyTracked();
@@ -59,6 +64,11 @@ contract CNMarketResolver {
         if (wadTotalWeightedScores[marketId] != 0) {
             revert MarketAlreadyTracked();
         }
+        emit LogResolverEmbedding(
+            marketId,
+            "finalizeDisagreeScores: Received Embedding",
+            noteEmbedding
+        );
 
         MarketConfig memory marketConfig = market.getMarket(marketId);
         PredictionTracker memory tracker = market.getPredictionTracker(
@@ -199,7 +209,7 @@ contract CNMarketResolver {
         }
         require(hasNonzero, "All-zero embedding");
         int256 norm = Algebra.norm(embedding);
-        // SKIP NORMALIZATION CHECK FOR HACKATHON DEMO
+        // SKIP NORMALIZATION CHECK FOR HACKATHON DEMO (Keep this skipped for now)
         // require(norm >= 0.9e18 && norm <= 1.1e18, "Embedding not normalized");
     }
 

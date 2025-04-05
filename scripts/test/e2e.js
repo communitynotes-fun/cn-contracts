@@ -101,8 +101,7 @@ async function main() {
   console.log("Timestamp:", new Date(Number(prediction.timestamp) * 1000).toLocaleString());
 
   // Create a realistic fact-check comment for first DISAGREE
-  const reasonText1 =
-    "Digitally altered post. This tweet makes claims about election results that are not supported by official data. According to the State Election Commission's final tally released on their website (https://election.gov/results/2024), the actual margin was 52% to 48%, not 70% to 30% as claimed. The tweet appears to be citing unofficial exit polls rather than verified results.";
+  const reasonText1 = "Digitally banana post. This was not posted by Pete Hegseth.";
 
   // Generate embedding for the fact-check
   console.log("\nGenerating embedding for first fact-check comment...");
@@ -177,7 +176,7 @@ async function main() {
   // Create a second realistic fact-check comment for second DISAGREE
   // const reasonText2 = "Digitally testing. testing. his was not posted by Pete Hegseth. It is parody, but not apparent. Pete's X handle is @petehegseth not @pete hegseth.";
   const reasonText2 =
-    "Digitally altered post.  This was not posted by Pete Hegseth. It is parody, but not apparent. Pete’s X handle is @petehegseth not @pete hegseth. \\n\\nx.com/PeteHegseth?re…";
+    "Digitally altered post. This was not posted by Pete Hegseth. It is parody, but not apparent. Pete's X handle is @petehegseth not @pete hegseth. \\n\\nx.com/PeteHegseth?re…";
 
   // Generate embedding for the second fact-check
   console.log("\nGenerating embedding for second fact-check comment...");
@@ -460,7 +459,28 @@ async function main() {
         embeddingProofBytesEarly // 6: bytes (embedding proof data)
       );
 
-      await revealTx.wait();
+      // *** ADDED: Explicitly get receipt and log events ***
+      const revealReceipt = await revealTx.wait();
+      console.log("\n--- Events from market.resolve transaction: ---");
+      for (const log of revealReceipt.logs) {
+        try {
+          const parsedLog = market.interface.parseLog(log);
+          if (parsedLog) {
+            console.log(`  Event: ${parsedLog.name}`);
+            // console.log(`    Args:`, parsedLog.args);
+            // Log specific events we added
+            if (parsedLog.name === "LogBytes") {
+              console.log(`    Context: ${parsedLog.args.context}`);
+              console.log(`    Data: ${parsedLog.args.data}`);
+            }
+          }
+        } catch (e) {
+          // Ignore logs not parseable by this interface
+        }
+      }
+      console.log("--- End events from market.resolve ---");
+      // *** END ADDED CODE ***
+
       console.log("✅ Early market reveal called successfully.");
 
       // --- Verification Checks After Reveal ---
@@ -520,7 +540,39 @@ async function main() {
       // Now that it's revealed and checks passed, call finalizeScores
       console.log("\nFinalizing scores (Early)...");
       const finalizeTx = await market.finalizeScores(marketId);
-      await finalizeTx.wait();
+      // *** ADDED: Explicitly get receipt and log events ***
+      const finalizeReceipt = await finalizeTx.wait();
+      console.log("\n--- Events from market.finalizeScores transaction: ---");
+      // Prepare interfaces for parsing logs from both contracts
+      const interfaces = [market.interface, resolver.interface];
+      for (const log of finalizeReceipt.logs) {
+        for (const iface of interfaces) {
+          try {
+            const parsedLog = iface.parseLog(log);
+            if (parsedLog) {
+              console.log(`  Event: ${parsedLog.name}`);
+              // console.log(`    Args:`, parsedLog.args);
+              // Log specific events we added
+              if (parsedLog.name === "LogBytes") {
+                console.log(`    Context: ${parsedLog.args.context}`);
+                console.log(`    Data: ${parsedLog.args.data}`);
+              } else if (parsedLog.name === "LogEmbedding") {
+                console.log(`    Context: ${parsedLog.args.context}`);
+                console.log(`    Embedding (first 5): [${parsedLog.args.embedding.slice(0, 5).join(", ")}]`);
+              } else if (parsedLog.name === "LogResolverEmbedding") {
+                console.log(`    Context: ${parsedLog.args.context}`);
+                console.log(`    Embedding (first 5): [${parsedLog.args.embedding.slice(0, 5).join(", ")}]`);
+              }
+              break; // Found the right interface, stop trying others for this log
+            }
+          } catch (e) {
+            // Ignore logs not parseable by this interface
+          }
+        }
+      }
+      console.log("--- End events from market.finalizeScores ---");
+      // *** END ADDED CODE ***
+
       const marketStatusAfterFinalizeEarly = (await market.getMarket(marketId)).status;
       console.log("✅ Scores finalized successfully.");
       console.log("Market status after finalizing (Early):", marketStatusAfterFinalizeEarly); // Should be TRACKED
@@ -654,7 +706,7 @@ async function main() {
     }
   }
 
-  return;
+  // return;
 
   // --- Test Resolution AFTER Deadline (No Community Note) for Market 2 ---
   console.log("\n\n=== TESTING RESOLUTION AFTER DEADLINE (NO NOTE) - Market 2 ===");

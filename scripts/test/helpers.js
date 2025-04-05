@@ -1,5 +1,6 @@
 // TEST HELPER FUNCTIONS
 const { ethers } = require("hardhat");
+const { AbiCoder } = require("ethers");
 const OpenAI = require("openai");
 const { ReclaimClient } = require("@reclaimprotocol/zk-fetch");
 const Reclaim = require("@reclaimprotocol/js-sdk");
@@ -285,24 +286,57 @@ async function generateAndEncodeEmbedding(text, embedding = null) {
       throw new Error(`Expected ${EMBEDDING_DIMENSION} dimensions but got ${embedding.length}`);
     }
 
-    // Convert the floating point values to our contract's fixed-point format
+    // --- STANDARD WAD ABI ENCODING ---
+
+    // Convert the floating point values to our contract's fixed-point format (WAD)
     const wadEmbedding = embedding.map((value) => {
+      // Ensure the float is treated as a string for parseUnits if needed, or handle precision carefully
+      // Using Math.floor might lose precision, consider a fixed-point math library if needed
       return BigInt(Math.floor(value * 1e18));
     });
 
-    // Define the adjusted scale factor
-    const scaleFactorBigInt = 3n * 10n ** 13n; // Use 3e13
+    // Encode the int256[] array using standard ABI encoding
+    // Instantiate AbiCoder directly
+    const defaultAbiCoder = new AbiCoder();
+    const encoded = defaultAbiCoder.encode(["int256[]"], [wadEmbedding]);
+
+    // Log the WAD values and the final ABI encoded hex string
+    console.log("generateAndEncodeEmbedding DEBUG: First 5 WAD values:");
+    for (let i = 0; i < 5 && i < wadEmbedding.length; i++) {
+      console.log(`  [${i}]: ${wadEmbedding[i]?.toString()}`);
+    }
+    console.log("generateAndEncodeEmbedding DEBUG: Final ABI encoded hex string:");
+    console.log(encoded);
+
+    return {
+      embedding, // original embedding from OpenAI or provided
+      wadEmbedding, // WAD version for potential off-chain use
+      encoded, // ABI encoded bytes version for contract
+    };
+    // --- END STANDARD WAD ABI ENCODING ---
+
+    /* // Simplified float->int16 encoding commented out
+    // --- SIMPLIFIED HACKATHON ENCODING --- 
+    // Directly scale float [-1, 1] to int16 [-32767, 32767] range
 
     // Encode each value as a 2-byte int16
     const encoded = ethers.concat(
-      wadEmbedding.map((wadValue) => {
-        // Scale down using the adjusted factor
-        const int16Value = Number(wadValue / scaleFactorBigInt);
-
-        // Clamp the value to int16 range
+      embedding.map((floatValue, index) => { // Use original float value
+        // Scale float to int16 range
+        const scaledValue = floatValue * 32767.0;
+        // Round to nearest integer
+        const int16Value = Math.round(scaledValue);
+        // Clamp to be safe (though scaling should keep it in range)
         const clampedValue = Math.max(-32768, Math.min(32767, int16Value));
 
-        // Convert to bytes
+        // -- DEBUG LOGGING START --
+        if (index < 5) { // Log first 5
+          // Log original float and the final clamped int16
+          console.log(`[${index}]: float=${floatValue}, scaled=${scaledValue}, clampedInt16=${clampedValue}`);
+        }
+        // -- DEBUG LOGGING END --
+
+        // Convert clamped int16 to 2 bytes (big-endian)
         const buffer = new ArrayBuffer(2);
         const view = new DataView(buffer);
         view.setInt16(0, clampedValue, false); // false for big-endian
@@ -310,11 +344,20 @@ async function generateAndEncodeEmbedding(text, embedding = null) {
       })
     );
 
+    // Remove WAD specific debug logs and return values
+    console.log("generateAndEncodeEmbedding DEBUG: Final SIMPLIFIED encoded hex string:");
+    console.log(ethers.hexlify(encoded)); // Log the final hex bytes
+
     return {
       embedding, // original embedding from OpenAI or provided
-      wadEmbedding, // fixed-point version as BigInts
+      // wadEmbedding: null, // No longer calculating WAD here
       encoded, // bytes version for contract
     };
+    // --- END SIMPLIFIED HACKATHON ENCODING ---
+    */
+    /* // Original encoding logic commented out
+    // ... (rest of commented out code)
+    */
   } catch (error) {
     console.error("Error in generateAndEncodeEmbedding:", error);
     throw error;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import {wadMul, wadDiv, wadPow} from "solmate/src/utils/SignedWadMath.sol";
+import {wadMul, wadPow} from "solmate/src/utils/SignedWadMath.sol";
 
 library Algebra {
     error VectorDimMismatch();
@@ -14,7 +14,7 @@ library Algebra {
     }
 
     // Calculate dot product of two vectors
-    function dot(
+    function _dot(
         int256[] memory a,
         int256[] memory b
     ) internal pure returns (int256) {
@@ -32,25 +32,7 @@ library Algebra {
 
     // Calculate the norm (magnitude) of a vector
     function norm(int256[] memory a) internal pure returns (int256) {
-        return wadPow(dot(a, a), 0.5e18);
-    }
-
-    // Calculate cosine similarity between two vectors
-    function similarity(
-        int256[] memory a,
-        int256[] memory b
-    ) internal pure returns (int256) {
-        int256 dotProduct = dot(a, b);
-        int256 normA = norm(a);
-        int256 normB = norm(b);
-
-        // Avoid division by zero
-        if (normA == 0 || normB == 0) {
-            return 0;
-        }
-
-        // Calculate similarity using fixed-point math
-        return wadDiv(dotProduct, wadMul(normA, normB));
+        return wadPow(_dot(a, a), 0.5e18);
     }
 
     // Calculate weighted similarity with shift and weight factors
@@ -60,17 +42,18 @@ library Algebra {
         int256 wadShift,
         int256 wadWeight
     ) internal pure returns (int256) {
-        int256 sim = similarity(a, b);
-
-        // Apply shift to similarity and ensure minimum weight
-        int256 shiftedSim = sim + wadShift > 0 ? sim + wadShift : MIN_WEIGHT;
-
-        // Apply weight to the shifted similarity
+        int256 wadDot = _dot(a, b);
+        int256 shiftedSim = _wadMax(wadDot + wadShift, MIN_WEIGHT);
         return wadMul(shiftedSim, wadWeight);
     }
 
     // Get minimum of two values
     function min(uint256 a, uint256 b) internal pure returns (uint256) {
         return a < b ? a : b;
+    }
+
+    // Added internal _wadMax helper function
+    function _wadMax(int256 x, int256 y) internal pure returns (int256) {
+        return x > y ? x : y;
     }
 }

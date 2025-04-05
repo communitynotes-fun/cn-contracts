@@ -71,6 +71,12 @@ contract CNMarket is ICNMarket {
     event DebugLogInt(string message, int256 value);
     event DebugLogString(string message, string value);
     event ResolverUpdated(address indexed newResolverAddress);
+    event LogEmbedding(
+        uint256 indexed marketId,
+        string context,
+        int256[] embedding
+    );
+    event LogBytes(uint256 indexed marketId, string context, bytes data);
 
     // Errors
     error MarketAlreadyExists();
@@ -303,6 +309,9 @@ contract CNMarket is ICNMarket {
             revealTimestamp: block.timestamp
         });
 
+        // Log the bytes *just stored*
+        emit LogBytes(marketId, "resolve: Stored Outcome Bytes", noteEmbedding);
+
         market.status = MarketStatus.REVEALED;
 
         emit MarketResolved(marketId, hasNote, noteText, block.timestamp);
@@ -353,6 +362,12 @@ contract CNMarket is ICNMarket {
         }
 
         Outcome storage outcome = outcomes[marketId];
+        emit LogBytes(
+            marketId,
+            "finalizeScores: Outcome Bytes",
+            outcome.noteEmbedding
+        ); // Log raw bytes
+
         if (!outcome.hasNote) {
             PredictionTracker memory tracker = predictionTrackers[marketId];
             MarketConfig memory marketConfig = markets[marketId];
@@ -394,6 +409,11 @@ contract CNMarket is ICNMarket {
         int256[] memory noteEmbeddingDecoded = Embedding.decode(
             outcome.noteEmbedding
         );
+        emit LogEmbedding(
+            marketId,
+            "finalizeScores: Decoded Embedding",
+            noteEmbeddingDecoded
+        ); // Log decoded array
 
         if (resolverAddress != address(0)) {
             CNMarketResolver(resolverAddress).finalizeDisagreeScores(
@@ -445,7 +465,7 @@ contract CNMarket is ICNMarket {
             claimed: false
         });
 
-        address resolverAddress = resolverAddress;
+        // address resolverAddress = resolverAddress;
         if (!isAgree && resolverAddress != address(0)) {
             CNMarketResolver(resolverAddress).addPrediction(
                 marketId,
