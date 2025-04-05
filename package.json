@@ -10,6 +10,21 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "hardhat": "^2.22.19"
+    "@nomicfoundation/hardhat-ethers": "^3.0.8",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^4.9.6",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5",
+    "hardhat": "^2.22.19",
+    "hardhat-deploy": "^1.0.1",
+    "solc": "^0.8.26"
+  },
+  "dependencies": {
+    "@reclaimprotocol/js-sdk": "^3.0.0",
+    "@reclaimprotocol/verifier-solidity-sdk": "^1.0.4",
+    "@reclaimprotocol/zk-fetch": "^0.3.2",
+    "openai": "^4.91.1",
+    "solady": "^0.1.14",
+    "solmate": "^6.8.0"
   }
 }
