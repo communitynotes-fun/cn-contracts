@@ -86,7 +86,7 @@ async function main() {
   verifyContract(embeddingVerifierAddress, [reclaimAddress, EMBEDDING_DIMENSION]);
   verifyContract(marketAddress, [tweetVerifierAddress, embeddingVerifierAddress]);
   verifyContract(resolverAddress, [marketAddress]);
-  console.log("\n--- Verification attempted! ---");
+  console.log("\n--- Verification attemp ted! ---");
 
   // TweetVerifier
   // npx hardhat verify --network baseSepolia 0x817Ac62A3DD2cf2d9cfa39559F873a77Dda34544 "0xF90085f5Fd1a3bEb8678623409b3811eCeC5f6A5"

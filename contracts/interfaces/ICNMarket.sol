@@ -32,17 +32,35 @@ interface ICNMarket {
     // Create market
     function createMarket(string calldata tweetId) external returns (uint256);
 
-    // resolve market outcome
+    /**
+     * @notice Reveal the outcome of a market, performing necessary verifications.
+     * @dev Called by the designated resolver.
+     * @param marketId ID of the market
+     * @param hasNote Whether the tweet received a Community Note
+     * @param noteText The text of the Community Note (empty if no note)
+     * @param noteEmbeddingBytes The ABI encoded int256[] embedding bytes of the note text (empty if no note)
+     * @param noteProof The Reclaim.Proof struct for tweet status.
+     * @param embeddingProof The Reclaim.Proof struct for embedding.
+     */
     function resolve(
         uint256 marketId,
         bool hasNote,
         string calldata noteText,
         bytes calldata noteEmbeddingBytes,
-        Reclaim.Proof memory noteProofBytes,
-        Reclaim.Proof memory embeddingProofBytes
+        Reclaim.Proof memory noteProof,
+        Reclaim.Proof memory embeddingProof
     ) external;
 
-    // Track market predictions (renamed)
+    /**
+     * @notice Resolves a market when the deadline has passed and no community note was found.
+     * @param marketId ID of the market to resolve.
+     */
+    function resolveWithoutNote(uint256 marketId) external;
+
+    /**
+     * @notice Triggers the calculation of similarity scores in the resolver or marks market as tracked.
+     * @param marketId ID of the market
+     */
     function finalizeScores(uint256 marketId) external;
 
     // Make prediction
@@ -62,7 +80,4 @@ interface ICNMarket {
     function getPredictionRatio(
         uint256 marketId
     ) external view returns (int256);
-
-    // Resolve market without a note
-    function resolveWithoutNote(uint256 marketId) external;
 }

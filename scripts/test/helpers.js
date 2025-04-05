@@ -53,14 +53,18 @@ async function getZkNote(tweetId) {
       }
     );
 
+    console.log({ proof });
+
     console.log("Proof generated successfully!");
+    console.log({ proof });
 
     // Verify the proof
     const isVerified = await Reclaim.verifyProof(proof);
     console.log("Proof verification:", isVerified ? "Successful" : "Failed");
 
     // Transform the proof data for on-chain use
-    const proofData = await Reclaim.transformForOnchain(proof);
+    const proofData = Reclaim.transformForOnchain(proof);
+    console.log({ proofData });
 
     // Extract the note text and ID from the proof
     const noteText = proof.extractedParameterValues?.noteText || "";
@@ -154,7 +158,7 @@ async function getZkEmbedding(noteText) {
     console.log("Encoded embedding generated for on-chain use");
 
     // Transform the proof data for on-chain verification
-    const proofData = await Reclaim.transformForOnchain(proof);
+    const proofData = Reclaim.transformForOnchain(proof);
     console.log("Proof data prepared for on-chain verification.");
 
     // Return the necessary data
@@ -306,7 +310,7 @@ async function generateAndEncodeEmbedding(text, embedding = null) {
       console.log(`  [${i}]: ${wadEmbedding[i]?.toString()}`);
     }
     console.log("generateAndEncodeEmbedding DEBUG: Final ABI encoded hex string:");
-    console.log(encoded);
+    // console.log(encoded);
 
     return {
       embedding, // original embedding from OpenAI or provided

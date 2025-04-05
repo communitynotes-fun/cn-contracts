@@ -77,6 +77,11 @@ contract CNMarket is ICNMarket {
         int256[] embedding
     );
     event LogBytes(uint256 indexed marketId, string context, bytes data);
+    event TweetVerificationCalled(uint256 indexed marketId, bytes32 proofHash);
+    event EmbeddingVerificationCalled(
+        uint256 indexed marketId,
+        bytes32 proofHash
+    );
 
     // Errors
     error MarketAlreadyExists();
@@ -236,81 +241,57 @@ contract CNMarket is ICNMarket {
 
     /**
      * @notice Reveal the outcome of a market, performing necessary verifications.
-     * @dev This is the primary function for resolving a market, called by the designated resolver.
+     * @dev Calls the respective verifiers with proof structs.
      * @param marketId ID of the market
      * @param hasNote Whether the tweet received a Community Note
      * @param noteText The text of the Community Note (empty if no note)
-     * @param noteEmbedding The ENCODED embedding bytes of the note text (empty if no note)
-     * @param noteProof Proof data that the tweet status is correct (for ITweetVerifier).
-     * @param embeddingProof Proof data that the embedding is correct (for IEmbeddingVerifier).
+     * @param noteEmbeddingBytes The ABI encoded int256[] embedding bytes (if any)
+     * @param noteProof The Reclaim.Proof struct for tweet status.
+     * @param embeddingProof The Reclaim.Proof struct for embedding.
      */
     function resolve(
         uint256 marketId,
         bool hasNote,
         string calldata noteText,
-        bytes calldata noteEmbedding,
+        bytes calldata noteEmbeddingBytes,
         Reclaim.Proof memory noteProof,
         Reclaim.Proof memory embeddingProof
     ) external override {
-        // Only allow the designated resolver for this market to call
-        // if (msg.sender != resolvers[marketId]) {
-        //     revert Unauthorized();
-        // }
-
         MarketConfig storage market = markets[marketId];
         if (market.status != MarketStatus.OPEN) {
             revert MarketAlreadyResolved();
         }
 
-        // 1. Verify tweet status
+        // 1. Call TweetVerifier
         // if (tweetVerifier != address(0)) {
-        // Decode bytes calldata to Reclaim.Proof memory
-        // Reclaim.Proof memory noteProofDecoded = abi.decode(
-        //     noteProofBytes,
-        //     (Reclaim.Proof)
-        // );
-        // ITweetVerifier(tweetVerifier).verify(noteProof);
-        // (
-        //     string memory extractedNoteText,
-        //     string memory extractedNoteId,
-        //     string memory extractedUrl
-        // ) = ITweetVerifier(tweetVerifier).verify(noteProof);
-
-        // // im thinking how to kind of verify that the content is legit
-        // // how to console log?
-        // emit DebugLogString("Note Text", extractedNoteText);
-        // emit DebugLogString("Note ID", extractedNoteId);
-        // emit DebugLogString("URL", extractedUrl);
+        //     bool verifiedHasNote = ITweetVerifier(tweetVerifier).verify(
+        //         market.tweetId,
+        //         noteProof
+        //     );
         // }
 
-        // 2. Verify embedding
-        // bytes memory finalNoteEmbedding = noteEmbeddingBytes;
+        // 2. Call EmbeddingVerifier (only if a note is expected/present)
+        // bytes memory finalNoteEmbeddingBytes = noteEmbeddingBytes;
         // if (hasNote && embeddingVerifier != address(0)) {
-        //     // Decode bytes calldata to Reclaim.Proof memory
-        //     // Reclaim.Proof memory embeddingProofDecoded = abi.decode(
-        //     //     embeddingProofBytes,
-        //     //     (Reclaim.Proof)
-        //     // );
-        //     int256[] memory decodedVerifiedEmbedding = IEmbeddingVerifier(
+        //     int256[] memory verifiedEmbedding = IEmbeddingVerifier(
         //         embeddingVerifier
-        //     ).verify(
-        //             noteText,
-        //             finalNoteEmbedding, // Pass encoded bytes
-        //             embeddingProof // Pass decoded struct
-        //         );
-        //     // Trust the verifier
+        //     ).verify(noteText, finalNoteEmbeddingBytes, embeddingProof);
         // }
 
-        // 3. Store outcome (still store encoded bytes)
+        // 3. Store outcome
         outcomes[marketId] = Outcome({
             hasNote: hasNote,
             noteText: noteText,
-            noteEmbedding: noteEmbedding,
+            noteEmbedding: noteEmbeddingBytes,
             revealTimestamp: block.timestamp
         });
 
         // Log the bytes *just stored*
-        emit LogBytes(marketId, "resolve: Stored Outcome Bytes", noteEmbedding);
+        // emit LogBytes(
+        //     marketId,
+        //     "resolve: Stored Outcome Bytes",
+        //     noteEmbeddingBytes
+        // );
 
         market.status = MarketStatus.REVEALED;
 
@@ -362,11 +343,11 @@ contract CNMarket is ICNMarket {
         }
 
         Outcome storage outcome = outcomes[marketId];
-        emit LogBytes(
-            marketId,
-            "finalizeScores: Outcome Bytes",
-            outcome.noteEmbedding
-        ); // Log raw bytes
+        // emit LogBytes(
+        //     marketId,
+        //     "finalizeScores: Outcome Bytes",
+        //     outcome.noteEmbedding
+        // );
 
         if (!outcome.hasNote) {
             PredictionTracker memory tracker = predictionTrackers[marketId];

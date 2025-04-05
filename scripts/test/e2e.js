@@ -440,14 +440,14 @@ async function main() {
   const embeddingProofBytesEarly = zkEmbeddingResult?.proofData || "0x";
   const hasNoteEarly = zkNoteResult?.hasNote ?? false;
 
-  console.log({ noteEmbeddingBytesEarly });
+  // console.log({ noteEmbeddingBytesEarly });
 
-  console.log({ zkNoteResult });
+  // console.log({ zkNoteResult });
 
   // Only proceed if a note was actually found by getZkNote and embedding was processed
   if (hasNoteEarly && zkEmbeddingResult?.encoded && tweetProofBytesEarly !== "0x" && embeddingProofBytesEarly !== "0x") {
     console.log(`\nAttempting early resolution for Market ID: ${marketId} via market.resolve (hasNote: true)...`);
-    console.log({ noteTextEarly, noteEmbeddingBytesEarly });
+    // console.log({ noteTextEarly, noteEmbeddingBytesEarly });
     try {
       // Call market.resolve BEFORE the deadline with CORRECT arguments
       const revealTx = await market.resolve(
