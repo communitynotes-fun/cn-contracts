@@ -26,8 +26,8 @@ interface ICNMarket {
         uint256 marketId
     ) external view returns (Outcome memory);
 
-    // Get resolver address
-    function getResolver(uint256 marketId) external view returns (address);
+    // Get resolver address (Updated - no marketId)
+    function getResolver() external view returns (address);
 
     // Create market
     function createMarket(string calldata tweetId) external returns (uint256);

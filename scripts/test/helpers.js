@@ -14,8 +14,8 @@ const EMBEDDING_DIMENSION = 1536;
 const MODEL = "text-embedding-3-small"; // This model outputs 1536 dimensions
 
 // Reclaim Protocol credentials
-const APPLICATION_ID = process.env.RECLAIM_APP_ID;
-const APPLICATION_SECRET = process.env.RECLAIM_APP_SECRET;
+const APPLICATION_ID = process.env.RECLAIM_APP_ID || "0xee8cC99B887E6841a419dDE7074e4a5ca038fd58";
+const APPLICATION_SECRET = process.env.RECLAIM_APP_SECRET || "0x72538984f5981b2aee2c5488b457f4bb4415de14ab6349f759988419360b9a05";
 
 /**
  * Fetches tweet data and generates a ZK proof for a community note using Reclaim Protocol
@@ -112,6 +112,12 @@ async function getZkEmbedding(noteText) {
           model: MODEL,
           dimensions: EMBEDDING_DIMENSION,
         }),
+        responseMatches: [
+          {
+            type: "regex",
+            value: '"data":\\[\\{.*?"embedding":\\[\\d+\\.\\d+(?:,\\d+\\.\\d+)*\\],.*?\\}\\]',
+          },
+        ],
       }
       // No responseMatches block - capture the whole response in context
     );

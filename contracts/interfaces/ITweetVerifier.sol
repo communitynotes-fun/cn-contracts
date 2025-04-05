@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import "@reclaimprotocol/verifier-solidity-sdk/contracts/Reclaim.sol"; // Import Reclaim
+import {Reclaim} from "@reclaimprotocol/verifier-solidity-sdk/contracts/Reclaim.sol";
 
 /**
  * @title ITweetVerifier
@@ -10,14 +10,19 @@ import "@reclaimprotocol/verifier-solidity-sdk/contracts/Reclaim.sol"; // Import
 interface ITweetVerifier {
     /**
      * @notice Verify if a tweet has a community note using Reclaim proof.
-     * @param tweetId The ID of the tweet to verify.
-     * @param hasNote Whether the tweet has a community note.
-     * @param noteProof The Reclaim proof struct.
-     * @return True if the verification passes.
+     * @param reclaimProof The raw proof bytes.
+     * @return noteText The extracted note text.
+     * @return noteId The extracted note ID.
+     * @return url The extracted URL.
      */
     function verify(
-        string calldata tweetId,
-        bool hasNote,
-        Reclaim.Proof memory noteProof // Changed type
-    ) external view returns (bool);
+        Reclaim.Proof memory reclaimProof // Takes raw proof bytes // Returns multiple strings
+    )
+        external
+        view
+        returns (
+            string memory noteText,
+            string memory noteId,
+            string memory url
+        );
 }

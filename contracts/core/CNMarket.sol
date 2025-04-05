@@ -18,12 +18,14 @@ contract CNMarket is ICNMarket {
     uint256 public constant MARKET_DURATION = 24 hours;
     uint256 public constant MIN_VALUE = 0.01 ether;
     int256 public WAD_FEE_FRACTION = 0;
+    int256 public constant WAD_EARLY_BONUS_MAX = 0.5e18;
 
     // State variables
     address public owner;
     address public tweetVerifier;
     address public embeddingVerifier;
     uint256 private nextMarketId = 1; // Counter for market IDs
+    address public resolverAddress; // Single global resolver
 
     // Market data
     mapping(uint256 => MarketConfig) public markets;
@@ -31,8 +33,9 @@ contract CNMarket is ICNMarket {
     mapping(uint256 => Outcome) public outcomes;
     mapping(uint256 => mapping(uint256 => Prediction)) public predictions;
     mapping(uint256 => PredictionTracker) public predictionTrackers;
-    mapping(uint256 => address) public resolvers;
     mapping(address => uint256) public fees;
+    mapping(uint256 => int256) public totalWeightedAgreeScores;
+    mapping(uint256 => mapping(uint256 => int256)) public weightedAgreeScores;
 
     // Events
     event MarketCreated(
@@ -65,6 +68,9 @@ contract CNMarket is ICNMarket {
         uint256 payout,
         uint256 fee
     );
+    event DebugLogInt(string message, int256 value);
+    event DebugLogString(string message, string value);
+    event ResolverUpdated(address indexed newResolverAddress);
 
     // Errors
     error MarketAlreadyExists();
@@ -73,7 +79,7 @@ contract CNMarket is ICNMarket {
     error MarketClosed();
     error InsufficientValue();
     error PredictionFailed();
-    error MarketNotResolvedled();
+    error MarketNotResolved();
     error MarketAlreadyResolved();
     error MarketNotEnded();
     error VerificationFailed();
@@ -136,6 +142,16 @@ contract CNMarket is ICNMarket {
     }
 
     /**
+     * @notice Set the GLOBAL resolver address (Only Owner)
+     * @param _resolver The new resolver address
+     */
+    function setResolver(address _resolver) external onlyOwner {
+        require(_resolver != address(0), "Invalid resolver");
+        resolverAddress = _resolver;
+        emit ResolverUpdated(_resolver);
+    }
+
+    /**
      * @notice Create a new market for a tweet
      * @param tweetId ID of the tweet
      * @return marketId ID of the created market
@@ -180,9 +196,6 @@ contract CNMarket is ICNMarket {
             numPredictions: 0
         });
 
-        // Set creator as resolver
-        resolvers[marketId] = msg.sender;
-
         // Emit event
         emit MarketCreated(
             marketId,
@@ -193,17 +206,6 @@ contract CNMarket is ICNMarket {
         );
 
         return marketId;
-    }
-
-    /**
-     * @notice Set the resolver for a market
-     * @param marketId ID of the market
-     * @param resolver Address of the resolver
-     */
-    function setResolver(uint256 marketId, address resolver) external {
-        require(markets[marketId].creator == msg.sender, "Not market creator");
-        require(resolver != address(0), "Invalid resolver");
-        resolvers[marketId] = resolver;
     }
 
     // Implementation of interface functions
@@ -256,19 +258,23 @@ contract CNMarket is ICNMarket {
 
         // 1. Verify tweet status
         // if (tweetVerifier != address(0)) {
-        //     // Decode bytes calldata to Reclaim.Proof memory
-        //     // Reclaim.Proof memory noteProofDecoded = abi.decode(
-        //     //     noteProofBytes,
-        //     //     (Reclaim.Proof)
-        //     // );
-        //     bool verifiedHasNote = ITweetVerifier(tweetVerifier).verify(
-        //         market.tweetId,
-        //         hasNote,
-        //         noteProof // Pass decoded struct
-        //     );
-        //     if (!verifiedHasNote) {
-        //         revert VerificationFailed();
-        //     }
+        // Decode bytes calldata to Reclaim.Proof memory
+        // Reclaim.Proof memory noteProofDecoded = abi.decode(
+        //     noteProofBytes,
+        //     (Reclaim.Proof)
+        // );
+        // ITweetVerifier(tweetVerifier).verify(noteProof);
+        // (
+        //     string memory extractedNoteText,
+        //     string memory extractedNoteId,
+        //     string memory extractedUrl
+        // ) = ITweetVerifier(tweetVerifier).verify(noteProof);
+
+        // // im thinking how to kind of verify that the content is legit
+        // // how to console log?
+        // emit DebugLogString("Note Text", extractedNoteText);
+        // emit DebugLogString("Note ID", extractedNoteId);
+        // emit DebugLogString("URL", extractedUrl);
         // }
 
         // 2. Verify embedding
@@ -293,14 +299,12 @@ contract CNMarket is ICNMarket {
         outcomes[marketId] = Outcome({
             hasNote: hasNote,
             noteText: noteText,
-            noteEmbedding: noteEmbedding, // Store ENCODED bytes
+            noteEmbedding: noteEmbedding,
             revealTimestamp: block.timestamp
         });
 
-        // 4. Update market status
         market.status = MarketStatus.REVEALED;
 
-        // 5. Emit event
         emit MarketResolved(marketId, hasNote, noteText, block.timestamp);
     }
 
@@ -319,15 +323,13 @@ contract CNMarket is ICNMarket {
             revert MarketAlreadyResolved();
         }
 
-        // 3. Check Deadline
-        // Ensure market has actually ended before resolving without a note
         require(block.timestamp >= market.deadline, "MarketNotEnded");
 
         // 4. Store Outcome (No Note)
         outcomes[marketId] = Outcome({
             hasNote: false,
-            noteText: "", // Empty text
-            noteEmbedding: bytes(""), // Empty bytes
+            noteText: "",
+            noteEmbedding: bytes(""),
             revealTimestamp: block.timestamp
         });
 
@@ -345,40 +347,62 @@ contract CNMarket is ICNMarket {
      * @param marketId ID of the market
      */
     function finalizeScores(uint256 marketId) external override {
-        // Allow anyone to call this after reveal? Or only resolver?
-        // Currently allowing anyone, consider adding `if (msg.sender != resolvers[marketId]) revert Unauthorized();`
-
         MarketConfig storage market = markets[marketId];
         if (market.status != MarketStatus.REVEALED) {
-            revert MarketNotResolvedled(); // Changed error name?
+            revert MarketNotResolved();
         }
 
         Outcome storage outcome = outcomes[marketId];
         if (!outcome.hasNote) {
-            // If no note, just mark as tracked, no scores needed.
+            PredictionTracker memory tracker = predictionTrackers[marketId];
+            MarketConfig memory marketConfig = markets[marketId];
+            int256 totalWeightedScore = 0;
+            for (uint256 i = 1; i <= tracker.numPredictions; i++) {
+                Prediction memory prediction = predictions[marketId][i];
+                if (prediction.isAgree) {
+                    int256 timeWeight = _calculateTimeWeight(
+                        marketConfig,
+                        prediction
+                    );
+                    int256 predictionValueWad = Algebra.toWad(prediction.value);
+                    int256 individualScore = wadMul(
+                        predictionValueWad,
+                        timeWeight
+                    );
+
+                    weightedAgreeScores[marketId][i] = individualScore;
+
+                    totalWeightedScore += individualScore;
+                }
+            }
+            emit DebugLogInt(
+                "finalizeScores: Calculated totalWeightedAgreeScore",
+                totalWeightedScore
+            );
+
+            totalWeightedAgreeScores[marketId] = totalWeightedScore;
+
+            emit DebugLogInt(
+                "finalizeScores: Stored totalWeightedAgreeScore",
+                totalWeightedAgreeScores[marketId]
+            );
+
             market.status = MarketStatus.TRACKED;
-            // TODO: Emit MarketTracked event here? (With score 0?)
             return;
         }
 
-        // Decode the stored ENCODED embedding bytes to pass to resolver
         int256[] memory noteEmbeddingDecoded = Embedding.decode(
             outcome.noteEmbedding
         );
 
-        // Call the RENAMED function on the resolver
-        address resolverAddress = resolvers[marketId];
         if (resolverAddress != address(0)) {
-            // Call finalizeDisagreeScores on resolver
             CNMarketResolver(resolverAddress).finalizeDisagreeScores(
                 marketId,
                 noteEmbeddingDecoded
             );
-        } // else: handle case where resolver is not set? Maybe revert?
+        }
 
-        // Update market status
         market.status = MarketStatus.TRACKED;
-        // TODO: Emit MarketTracked event here? Get total score from resolver?
     }
 
     /**
@@ -406,12 +430,9 @@ contract CNMarket is ICNMarket {
             revert InsufficientValue();
         }
 
-        // Simplified check for disagree - requires non-empty embedding bytes
         if (!isAgree && reasonEmbedding.length == 0) {
-            revert PredictionFailed(); // Reason text check removed for simplicity, assuming embedding implies reason
+            revert PredictionFailed();
         }
-        // Removed on-chain embedding verification during predict for simplicity/gas.
-        // Rely on resolver checks if needed, or add back if required.
 
         PredictionTracker storage tracker = predictionTrackers[marketId];
         uint256 predictionId = tracker.nextPredictionId;
@@ -424,24 +445,14 @@ contract CNMarket is ICNMarket {
             claimed: false
         });
 
-        // Calculate weighted similarity score
-        // int256 wadWeightedScore = Algebra.weightedSimilarity(
-        //     predictionEmbedding,
-        //     noteEmbedding,
-        //     WAD_SIMILARITY_SHIFT,
-        //     wadMul(Algebra.toWad(prediction.value), timeWeight) // Ensure Algebra.toWad usage is correct
-        // );
-
-        // Note: The Algebra.weightedSimilarity call is actually in the Resolver, not here.
-        // We just need to ensure the call to resolver.addPrediction is correct.
-        address resolverAddress = resolvers[marketId];
+        address resolverAddress = resolverAddress;
         if (!isAgree && resolverAddress != address(0)) {
             CNMarketResolver(resolverAddress).addPrediction(
                 marketId,
                 predictionId,
                 reasonText,
                 reasonEmbedding,
-                msg.value // Pass uint256 value directly
+                msg.value
             );
         }
 
@@ -487,7 +498,6 @@ contract CNMarket is ICNMarket {
         uint256 totalValue = tracker.totalAgreeValue +
             tracker.totalDisagreeValue;
         if (totalValue == 0) return 0;
-        // Corrected: Cast uint256 to int256 for wadDiv
         return wadDiv(int256(tracker.totalAgreeValue), int256(totalValue));
     }
 
@@ -503,14 +513,10 @@ contract CNMarket is ICNMarket {
     }
 
     /**
-     * @notice Get the resolver for a market
-     * @param marketId ID of the market
-     * @return The resolver address
+     * @notice Get the global resolver address
      */
-    function getResolver(
-        uint256 marketId
-    ) external view override returns (address) {
-        return resolvers[marketId];
+    function getResolver() external view override returns (address) {
+        return resolverAddress;
     }
 
     /**
@@ -519,7 +525,6 @@ contract CNMarket is ICNMarket {
      * @param predictionId The ID of the prediction to claim.
      */
     function claimRewards(uint256 marketId, uint256 predictionId) external {
-        // 1. Checks
         MarketConfig storage market = markets[marketId];
         if (market.status != MarketStatus.TRACKED) {
             revert MarketNotTracked();
@@ -527,7 +532,7 @@ contract CNMarket is ICNMarket {
 
         Prediction storage prediction = predictions[marketId][predictionId];
         if (prediction.predictor == address(0)) {
-            revert PredictionFailed(); // Prediction doesn't exist
+            revert PredictionFailed();
         }
         if (prediction.claimed) {
             revert PredictionAlreadyClaimed();
@@ -536,50 +541,48 @@ contract CNMarket is ICNMarket {
             revert NotThePredictor();
         }
 
-        // 2. Determine Payout Logic
         Outcome memory outcome = outcomes[marketId];
         PredictionTracker memory tracker = predictionTrackers[marketId];
         uint256 payout = 0;
         uint256 fee = 0;
-        // Calculate total market value once
         uint256 totalMarketValue = tracker.totalAgreeValue +
             tracker.totalDisagreeValue;
 
         if (outcome.hasNote) {
-            // Note Exists: Disagree predictors win based on score
-            // Distribute the TOTAL market value among disagree winners
             if (!prediction.isAgree) {
-                address resolverAddress = resolvers[marketId];
                 if (resolverAddress != address(0)) {
                     (payout, fee) = CNMarketResolver(resolverAddress)
                         .calculateReward(
                             marketId,
                             predictionId,
-                            totalMarketValue, // Pass TOTAL value as the pool
-                            market.wadFeeFraction // Fee fraction is 0 anyway
+                            totalMarketValue,
+                            market.wadFeeFraction
                         );
                 }
             }
         } else {
-            // No Note: Agree predictors win based on stake proportion
-            // Distribute the TOTAL market value among agree winners
             if (prediction.isAgree) {
-                if (tracker.totalAgreeValue > 0) {
-                    // Still need this check
-                    (payout, fee) = Claim.getClaimValue(
-                        Algebra.toWad(prediction.value),
-                        Algebra.toWad(tracker.totalAgreeValue),
-                        totalMarketValue, // Pass TOTAL value as the pool
-                        market.wadFeeFraction // Fee fraction is 0 anyway
-                    );
+                int256 totalScore = totalWeightedAgreeScores[marketId];
+
+                if (totalScore > 0) {
+                    int256 individualScore = weightedAgreeScores[marketId][
+                        predictionId
+                    ];
+
+                    if (individualScore > 0) {
+                        (payout, fee) = Claim.getClaimValue(
+                            individualScore,
+                            totalScore,
+                            totalMarketValue,
+                            market.wadFeeFraction
+                        );
+                    }
                 }
             }
         }
 
-        // 3. Mark as Claimed (Effect)
         prediction.claimed = true;
 
-        // 4. Transfer Payout and Handle Fee (Interaction)
         _checkedTransfer(
             msg.sender,
             payout,
@@ -588,7 +591,6 @@ contract CNMarket is ICNMarket {
             marketId
         );
 
-        // 5. Emit Event
         emit PredictionClaimed(marketId, predictionId, msg.sender, payout, fee);
     }
 
@@ -607,23 +609,16 @@ contract CNMarket is ICNMarket {
             tracker.totalDisagreeValue;
         uint256 alreadyClaimed = tracker.totalValueClaimed;
 
-        // Ensure there are enough funds remaining in the market pool
         if (alreadyClaimed + payoutValue + feeValue > totalMarketValue) {
-            // This shouldn't happen with correct reward calculation, but acts as a safeguard
-            // Option 1: Revert entirely
             revert InsufficientMarketBalance();
-            // Option 2: (More complex) Distribute remaining proportionally - omitted for simplicity
         }
 
-        // Update claimed total *before* transfers
         tracker.totalValueClaimed += payoutValue + feeValue;
 
-        // Update fees collected
         if (feeValue > 0 && feeRecipient != address(0)) {
             fees[feeRecipient] += feeValue;
         }
 
-        // Transfer payout
         if (payoutValue > 0) {
             payable(to).transfer(payoutValue);
         }
@@ -633,9 +628,31 @@ contract CNMarket is ICNMarket {
     function claimFees(uint256 amount) external {
         uint256 availableFees = fees[msg.sender];
         if (amount > availableFees) {
-            revert InsufficientValue(); // Re-use error
+            revert InsufficientValue();
         }
         fees[msg.sender] = availableFees - amount;
         payable(msg.sender).transfer(amount);
+    }
+
+    /**
+     * @dev Calculates the time-based weight for a prediction.
+     * Adapated from Resolver.
+     * Re-add this helper function.
+     */
+    function _calculateTimeWeight(
+        MarketConfig memory marketConfig,
+        Prediction memory prediction
+    ) internal pure returns (int256 timeWeight) {
+        uint256 timeElapsed = prediction.timestamp -
+            marketConfig.tweetTimestamp;
+        uint256 totalTime = marketConfig.deadline - marketConfig.tweetTimestamp;
+
+        timeWeight = int256(1e18);
+        if (totalTime > 0 && timeElapsed < totalTime) {
+            timeWeight += wadMul(
+                WAD_EARLY_BONUS_MAX,
+                wadDiv(int256(totalTime - timeElapsed), int256(totalTime))
+            );
+        }
     }
 }
