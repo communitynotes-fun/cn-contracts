@@ -30,8 +30,12 @@ module.exports = {
     baseSepolia: {
       url: "https://sepolia.base.org",
       accounts: [process.env.PRIVATE_KEY],
-      // accounts: ["47d2d324258afff435ed6419249dd6b537ae869a509a7bfa3ee65baaae1c97ee"],
       chainId: 84532,
+    },
+    polygon: {
+      url: process.env.POLYGON_RPC_URL || "https://polygon-rpc.com",
+      accounts: [process.env.PRIVATE_KEY],
+      chainId: 137,
     },
   },
   paths: {
@@ -43,6 +47,7 @@ module.exports = {
   etherscan: {
     apiKey: {
       baseSepolia: process.env.BASESCAN_API_KEY,
+      polygon: process.env.POLYGONSCAN_API_KEY,
     },
     customChains: [
       {
@@ -51,6 +56,14 @@ module.exports = {
         urls: {
           apiURL: "https://api-sepolia.basescan.org/api",
           browserURL: "https://sepolia.basescan.org",
+        },
+      },
+      {
+        network: "polygon",
+        chainId: 137,
+        urls: {
+          apiURL: "https://api.polygonscan.com/api",
+          browserURL: "https://polygonscan.com",
         },
       },
     ],

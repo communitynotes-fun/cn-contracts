@@ -1,4 +1,4 @@
-# CommunityNotes.Fun - Getting Started
+# communitynotes.fun - Getting Started
 
 Follow these steps to set up and run the project locally.
 
@@ -45,5 +45,12 @@ Follow these steps to set up and run the project locally.
     ```bash
     npx hardhat run scripts/test/e2e.js --network localhost
     ```
+
+## Deploying to Mainnet
+
+1. **Polygon**
+   ```bash
+   npx hardhat run scripts/deployPolygon.js --network polygon
+   ```
 
 This should execute the end-to-end flow defined in the `e2e.js` script against your local Hardhat network.
