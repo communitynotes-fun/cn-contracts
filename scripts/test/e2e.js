@@ -36,7 +36,7 @@ async function main() {
 
   const EmbeddingVerifier = await ethers.getContractFactory("EmbeddingVerifier");
   // Pass the deployed Reclaim contract address and the dimension
-  const embeddingVerifier = await EmbeddingVerifier.deploy(await reclaim.getAddress(), 1536);
+  const embeddingVerifier = await EmbeddingVerifier.deploy(await reclaim.getAddress(), 768);
   await embeddingVerifier.waitForDeployment();
   console.log("EmbeddingVerifier deployed to:", await embeddingVerifier.getAddress());
 
@@ -102,7 +102,7 @@ async function main() {
 
   // Create a realistic fact-check comment for first DISAGREE
   const reasonText1 =
-    "This tweet makes claims about election results that are not supported by official data. According to the State Election Commission's final tally released on their website (https://election.gov/results/2024), the actual margin was 52% to 48%, not 70% to 30% as claimed. The tweet appears to be citing unofficial exit polls rather than verified results.";
+    "Digitally altered post. This tweet makes claims about election results that are not supported by official data. According to the State Election Commission's final tally released on their website (https://election.gov/results/2024), the actual margin was 52% to 48%, not 70% to 30% as claimed. The tweet appears to be citing unofficial exit polls rather than verified results.";
 
   // Generate embedding for the fact-check
   console.log("\nGenerating embedding for first fact-check comment...");
@@ -175,7 +175,9 @@ async function main() {
   console.log("Timestamp:", new Date(Number(prediction2.timestamp) * 1000).toLocaleString());
 
   // Create a second realistic fact-check comment for second DISAGREE
-  const reasonText2 = "Digitally altered post.  This was not posted by Pete Hegseth. It is parody, but not apparent. Pete's X handle is @petehegseth not @pete hegseth.";
+  // const reasonText2 = "Digitally testing. testing. his was not posted by Pete Hegseth. It is parody, but not apparent. Pete's X handle is @petehegseth not @pete hegseth.";
+  const reasonText2 =
+    "Digitally altered post.  This was not posted by Pete Hegseth. It is parody, but not apparent. Pete’s X handle is @petehegseth not @pete hegseth. \\n\\nx.com/PeteHegseth?re…";
 
   // Generate embedding for the second fact-check
   console.log("\nGenerating embedding for second fact-check comment...");
@@ -186,6 +188,7 @@ async function main() {
 
   // Make second DISAGREE prediction (User4)
   console.log("\nMaking DISAGREE prediction (User4)...");
+  console.log({ reasonText2, encoded2 });
   const disagreePredictionTx2 = await market.connect(user4).predict(
     marketId,
     false, // isAgree = false for DISAGREE
@@ -438,11 +441,14 @@ async function main() {
   const embeddingProofBytesEarly = zkEmbeddingResult?.proofData || "0x";
   const hasNoteEarly = zkNoteResult?.hasNote ?? false;
 
+  console.log({ noteEmbeddingBytesEarly });
+
   console.log({ zkNoteResult });
 
   // Only proceed if a note was actually found by getZkNote and embedding was processed
   if (hasNoteEarly && zkEmbeddingResult?.encoded && tweetProofBytesEarly !== "0x" && embeddingProofBytesEarly !== "0x") {
     console.log(`\nAttempting early resolution for Market ID: ${marketId} via market.resolve (hasNote: true)...`);
+    console.log({ noteTextEarly, noteEmbeddingBytesEarly });
     try {
       // Call market.resolve BEFORE the deadline with CORRECT arguments
       const revealTx = await market.resolve(
@@ -503,7 +509,7 @@ async function main() {
           // Optionally, if disagree, fetch reason from resolver
           if (!predData.isAgree) {
             const resolverPred = await resolver.predictions(marketId, predId);
-            console.log(`    -> Disagree Reason: ${resolverPred.reasonText.substring(0, 50)}...`);
+            console.log(`    -> Disagree Reason: ${resolverPred.reasonText}`);
           }
         } catch (getPredError) {
           console.error(`   Error fetching prediction ${predId}:`, getPredError);

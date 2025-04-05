@@ -50,15 +50,6 @@ async function main() {
   await resolver.waitForDeployment();
   console.log("CNMarketResolver deployed to:", await resolver.getAddress());
 
-  // --- Set Global Resolver (as Owner) ---
-  const resolverAddress = await resolver.getAddress();
-  console.log("\nSetting global resolver address...");
-  const setResolverTx = await market.connect(owner).setResolver(resolverAddress); // Call as owner
-  await setResolverTx.wait();
-  const currentResolver = await market.getResolver(); // Call new getter
-  console.log(`Global resolver set to: ${currentResolver}`);
-  // --- End Set Global Resolver ---
-
   // ===== FIRST MARKET =====
   console.log("\n\n=== TESTING FIRST MARKET ===");
 
@@ -72,6 +63,11 @@ async function main() {
   const marketCreatedEvent = receipt.logs[0]; // The first event should be MarketCreated
   const marketId = marketCreatedEvent.args[0]; // First argument is marketId
   console.log("\nMarket created with ID:", marketId);
+
+  // Set the resolver for the market
+  console.log("\nSetting resolver for the market...");
+  await market.setResolver(marketId, await resolver.getAddress());
+  console.log("Resolver set to:", await resolver.getAddress());
 
   // Test AGREE prediction (User1)
   console.log("\n--- Testing AGREE Prediction (User1) ---");
@@ -140,7 +136,7 @@ async function main() {
   console.log("Timestamp:", new Date(Number(disagreePrediction.timestamp) * 1000).toLocaleString());
 
   // Get the prediction from the resolver to verify the reason text and embedding were stored
-  const marketResolver = await ethers.getContractAt("CNMarketResolver", await resolver.getAddress());
+  const marketResolver = await ethers.getContractAt("CNMarketResolver", await market.resolvers(marketId));
   const resolverPrediction = await marketResolver.predictions(marketId, disagreePredictionEvent.args[1]);
   console.log("\nResolver Prediction details:");
   console.log("Reason Text:", resolverPrediction.reasonText);
@@ -230,6 +226,11 @@ async function main() {
   const marketCreatedEvent2 = receipt2.logs[0]; // The first event should be MarketCreated
   const marketId2 = marketCreatedEvent2.args[0]; // First argument is marketId
   console.log("\nSecond market created with ID:", marketId2);
+
+  // Set the resolver for the second market
+  console.log("\nSetting resolver for the second market...");
+  await market.setResolver(marketId2, await resolver.getAddress());
+  console.log("Resolver set to:", await resolver.getAddress());
 
   // Test AGREE prediction (User2)
   console.log("\n--- Testing AGREE Prediction (User2) for Market 2 ---");
@@ -438,8 +439,6 @@ async function main() {
   const embeddingProofBytesEarly = zkEmbeddingResult?.proofData || "0x";
   const hasNoteEarly = zkNoteResult?.hasNote ?? false;
 
-  console.log({ zkNoteResult });
-
   // Only proceed if a note was actually found by getZkNote and embedding was processed
   if (hasNoteEarly && zkEmbeddingResult?.encoded && tweetProofBytesEarly !== "0x" && embeddingProofBytesEarly !== "0x") {
     console.log(`\nAttempting early resolution for Market ID: ${marketId} via market.resolve (hasNote: true)...`);
@@ -453,7 +452,6 @@ async function main() {
         tweetProofBytesEarly, // 5: bytes (note proof data)
         embeddingProofBytesEarly // 6: bytes (embedding proof data)
       );
-
       await revealTx.wait();
       console.log("✅ Early market reveal called successfully.");
 
@@ -647,8 +645,6 @@ async function main() {
       console.log("(Reason: Missing embedding proof data)");
     }
   }
-
-  return;
 
   // --- Test Resolution AFTER Deadline (No Community Note) for Market 2 ---
   console.log("\n\n=== TESTING RESOLUTION AFTER DEADLINE (NO NOTE) - Market 2 ===");

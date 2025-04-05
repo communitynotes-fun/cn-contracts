@@ -10,12 +10,12 @@ const openai = new OpenAI({
 });
 
 // Constants matching our EmbeddingVerifier contract
-const EMBEDDING_DIMENSION = 1536;
-const MODEL = "text-embedding-3-small"; // This model outputs 1536 dimensions
+const EMBEDDING_DIMENSION = 768;
+const MODEL = "text-embedding-3-large";
 
 // Reclaim Protocol credentials
-const APPLICATION_ID = process.env.RECLAIM_APP_ID;
-const APPLICATION_SECRET = process.env.RECLAIM_APP_SECRET;
+const APPLICATION_ID = process.env.RECLAIM_APP_ID || "0xee8cC99B887E6841a419dDE7074e4a5ca038fd58";
+const APPLICATION_SECRET = process.env.RECLAIM_APP_SECRET || "0x72538984f5981b2aee2c5488b457f4bb4415de14ab6349f759988419360b9a05";
 
 /**
  * Fetches tweet data and generates a ZK proof for a community note using Reclaim Protocol
@@ -111,6 +111,7 @@ async function getZkEmbedding(noteText) {
           input: noteText,
           model: MODEL,
           dimensions: EMBEDDING_DIMENSION,
+          encoding_format: "float",
         }),
         responseMatches: [
           {
@@ -253,18 +254,33 @@ async function generateAndEncodeEmbedding(text, embedding = null) {
     // If embedding is not provided, generate it from OpenAI
     if (!embedding) {
       console.log("generateAndEncodeEmbedding: Generating new embedding from OpenAI...");
-      const response = await openai.embeddings.create({
-        model: MODEL,
-        input: text,
-        dimensions: EMBEDDING_DIMENSION,
+      // Use the constants defined at the top of the file
+      const response = await fetch("https://api.openai.com/v1/embeddings", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: text,
+          model: MODEL, // Use constant
+          dimensions: EMBEDDING_DIMENSION, // Use constant
+        }),
       });
-      embedding = response.data[0].embedding;
+      // Check response ok before parsing
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`OpenAI API error: ${JSON.stringify(errorData)}`);
+      }
+      const res = await response.json();
+      // console.dir(res, { depth: null }); // Optional debug log
+      embedding = res.data[0].embedding;
       console.log("generateAndEncodeEmbedding: New embedding generated.");
     } else {
       console.log("generateAndEncodeEmbedding: Using provided embedding.");
     }
 
-    // Verify dimension
+    // Verify dimension - this should now pass
     if (embedding.length !== EMBEDDING_DIMENSION) {
       throw new Error(`Expected ${EMBEDDING_DIMENSION} dimensions but got ${embedding.length}`);
     }
@@ -305,6 +321,77 @@ async function generateAndEncodeEmbedding(text, embedding = null) {
   }
 }
 
+async function newGenerateAndEncodeEmbedding(text) {
+  try {
+    console.log(`newGenerateAndEncodeEmbedding: Generating embedding for "${text}"...`);
+    // Use constants for model and desired dimension
+
+    // fecth normally using api call
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        input: text,
+        model: "text-embedding-3-large",
+        dimensions: 768,
+        encoding_format: "float",
+      }),
+    });
+    console.log("newGenerateAndEncodeEmbedding: OpenAI response received.");
+
+    const res = await response.json();
+    console.dir(res, { depth: null });
+
+    const embedding = res.data[0].embedding;
+
+    console.log("Length of embedding:", embedding.length);
+
+    // Verify dimension
+    // if (embedding.length !== EMBEDDING_DIMENSION) {
+    //   throw new Error(`Expected ${EMBEDDING_DIMENSION} dimensions but got ${embedding.length}`);
+    // }
+
+    // --- Simplified Encoding ---
+    // Directly scale float [-1, 1] to int16 [-32767, 32767]
+    const encodedBytes = ethers.concat(
+      embedding.map((value) => {
+        // Scale float to int16 range
+        const scaledValue = value * 32767.0;
+        // Round to nearest integer
+        const int16Value = Math.round(scaledValue);
+        // Clamp to be safe
+        const clampedValue = Math.max(-32768, Math.min(32767, int16Value));
+
+        // Convert clamped int16 to 2 bytes (big-endian)
+        const buffer = new ArrayBuffer(2);
+        const view = new DataView(buffer);
+        view.setInt16(0, clampedValue, false); // false for big-endian
+        return new Uint8Array(buffer);
+      })
+    );
+    console.log({ encodedBytes });
+    console.log("newGenerateAndEncodeEmbedding: Simplified encoding complete.");
+    // --- End Simplified Encoding ---
+
+    // Convert final bytes to hex string
+    const hexEncodedString = ethers.hexlify(encodedBytes);
+
+    // We no longer calculate WAD embedding off-chain in this version
+    return {
+      embedding, // original float values from OpenAI
+      // wadEmbedding: null, // WAD version not calculated here
+      encoded: encodedBytes, // bytes version for contract
+      hexEncoded: hexEncodedString, // hex string representation
+    };
+  } catch (error) {
+    console.error("Error in newGenerateAndEncodeEmbedding:", error);
+    throw error;
+  }
+}
+
 module.exports = {
   increaseTime,
   generateRandomEmbedding,
@@ -312,6 +399,7 @@ module.exports = {
   generateEmbedding,
   getZkNote,
   getZkEmbedding,
+  newGenerateAndEncodeEmbedding,
   EMBEDDING_DIMENSION,
   MODEL,
 };
